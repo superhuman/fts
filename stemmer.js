@@ -1,230 +1,195 @@
-// https://github.com/kristopolous/Porter-Stemmer/blob/master/PorterStemmer1980.js
-//
-// Reference Javascript Porter Stemmer. This code corresponds to the original
-// 1980 paper available here: http://tartarus.org/martin/PorterStemmer/def.txt
-// The latest version of this code is available at https://github.com/kristopolous/Porter-Stemmer
-//
-// Original comment:
-// Porter stemmer in Javascript. Few comments, but it's easy to follow against the rules in the original
-// paper, in
-//
-//  Porter, 1980, An algorithm for suffix stripping, Program, Vol. 14,
-//  no. 3, pp 130-137,
-//
-// see also http://www.tartarus.org/~martin/PorterStemmer
+// https://github.com/wooorm/stemmer/blob/master/index.js
+'use strict';
 
-var stemmer = (function(){
-  var step2list = {
-      "ational" : "ate",
-      "tional" : "tion",
-      "enci" : "ence",
-      "anci" : "ance",
-      "izer" : "ize",
-      "bli" : "ble",
-      "alli" : "al",
-      "entli" : "ent",
-      "eli" : "e",
-      "ousli" : "ous",
-      "ization" : "ize",
-      "ation" : "ate",
-      "ator" : "ate",
-      "alism" : "al",
-      "iveness" : "ive",
-      "fulness" : "ful",
-      "ousness" : "ous",
-      "aliti" : "al",
-      "iviti" : "ive",
-      "biliti" : "ble",
-      "logi" : "log"
-    },
+/* Character code for `y`. */
+var CC_Y = 'y'.charCodeAt(0);
 
-    step3list = {
-      "icate" : "ic",
-      "ative" : "",
-      "alize" : "al",
-      "iciti" : "ic",
-      "ical" : "ic",
-      "ful" : "",
-      "ness" : ""
-    },
+/* Standard suffix manipulations. */
 
-    c = "[^aeiou]",          // consonant
-    v = "[aeiouy]",          // vowel
-    C = c + "[^aeiouy]*",    // consonant sequence
-    V = v + "[aeiou]*",      // vowel sequence
+var step2list = {
+  ational: 'ate',
+  tional: 'tion',
+  enci: 'ence',
+  anci: 'ance',
+  izer: 'ize',
+  bli: 'ble',
+  alli: 'al',
+  entli: 'ent',
+  eli: 'e',
+  ousli: 'ous',
+  ization: 'ize',
+  ation: 'ate',
+  ator: 'ate',
+  alism: 'al',
+  iveness: 'ive',
+  fulness: 'ful',
+  ousness: 'ous',
+  aliti: 'al',
+  iviti: 'ive',
+  biliti: 'ble',
+  logi: 'log'
+};
 
-    mgr0 = "^(" + C + ")?" + V + C,               // [C]VC... is m>0
-    meq1 = "^(" + C + ")?" + V + C + "(" + V + ")?$",  // [C]VC[V] is m=1
-    mgr1 = "^(" + C + ")?" + V + C + V + C,       // [C]VCVC... is m>1
-    s_v = "^(" + C + ")?" + v;                   // vowel in stem
+var step3list = {
+  icate: 'ic',
+  ative: '',
+  alize: 'al',
+  iciti: 'ic',
+  ical: 'ic',
+  ful: '',
+  ness: ''
+};
 
-  function dummyDebug() {}
+/* Consonant-vowel sequences. */
 
-  function realDebug() {
-    console.log(Array.prototype.slice.call(arguments).join(' '));
+var consonant = '[^aeiou]';
+var vowel = '[aeiouy]';
+var consonantSequence = '(' + consonant + '[^aeiouy]*)';
+var vowelSequence = '(' + vowel + '[aeiou]*)';
+
+var MEASURE_GT_0 = new RegExp(
+  '^' + consonantSequence + '?' + vowelSequence + consonantSequence
+);
+
+var MEASURE_EQ_1 = new RegExp(
+  '^' + consonantSequence + '?' + vowelSequence + consonantSequence +
+  vowelSequence + '?$'
+);
+
+var MEASURE_GT_1 = new RegExp(
+  '^' + consonantSequence + '?' +
+  '(' + vowelSequence + consonantSequence + '){2,}'
+);
+
+var VOWEL_IN_STEM = new RegExp(
+  '^' + consonantSequence + '?' + vowel
+);
+
+var CONSONANT_LIKE = new RegExp(
+  '^' + consonantSequence + vowel + '[^aeiouwxy]$'
+);
+
+/* Exception expressions. */
+
+var SUFFIX_LL = /ll$/;
+var SUFFIX_E = /^(.+?)e$/;
+var SUFFIX_Y = /^(.+?)y$/;
+var SUFFIX_ION = /^(.+?(s|t))(ion)$/;
+var SUFFIX_ED_OR_ING = /^(.+?)(ed|ing)$/;
+var SUFFIX_AT_OR_BL_OR_IZ = /(at|bl|iz)$/;
+var SUFFIX_EED = /^(.+?)eed$/;
+var SUFFIX_S = /^.+?[^s]s$/;
+var SUFFIX_SSES_OR_IES = /^.+?(ss|i)es$/;
+var SUFFIX_MULTI_CONSONANT_LIKE = /([^aeiouylsz])\1$/;
+var STEP_2 = new RegExp(
+  '^(.+?)(ational|tional|enci|anci|izer|bli|alli|entli|eli|ousli|' +
+  'ization|ation|ator|alism|iveness|fulness|ousness|aliti|iviti|' +
+  'biliti|logi)$'
+);
+var STEP_3 = /^(.+?)(icate|ative|alize|iciti|ical|ful|ness)$/;
+var STEP_4 = new RegExp(
+  '^(.+?)(al|ance|ence|er|ic|able|ible|ant|ement|ment|ent|ou|ism|ate|' +
+  'iti|ous|ive|ize)$'
+);
+
+/* Stem `value`. */
+function stemmer(value) {
+  var firstCharacterWasLowerCaseY;
+  var match;
+
+  value = String(value).toLowerCase();
+
+  /* Exit early. */
+  if (value.length < 3) {
+    return value;
   }
 
-  return function (w, debug) {
-    var
-      stem,
-      suffix,
-      firstch,
-      re,
-      re2,
-      re3,
-      re4,
-      debugFunction,
-      origword = w;
-
-    if (debug) {
-      debugFunction = realDebug;
-    } else {
-      debugFunction = dummyDebug;
-    }
-
-    if (w.length < 3) { return w; }
-
-    firstch = w.substr(0,1);
-    if (firstch == "y") {
-      w = firstch.toUpperCase() + w.substr(1);
-    }
-
-    // Step 1a
-    re = /^(.+?)(ss|i)es$/;
-    re2 = /^(.+?)([^s])s$/;
-
-    if (re.test(w)) { 
-      w = w.replace(re,"$1$2"); 
-      debugFunction('1a',re, w);
-
-    } else if (re2.test(w)) {
-      w = w.replace(re2,"$1$2"); 
-      debugFunction('1a',re2, w);
-    }
-
-    // Step 1b
-    re = /^(.+?)eed$/;
-    re2 = /^(.+?)(ed|ing)$/;
-    if (re.test(w)) {
-      var fp = re.exec(w);
-      re = new RegExp(mgr0);
-      if (re.test(fp[1])) {
-        re = /.$/;
-        w = w.replace(re,"");
-        debugFunction('1b',re, w);
-      }
-    } else if (re2.test(w)) {
-      var fp = re2.exec(w);
-      stem = fp[1];
-      re2 = new RegExp(s_v);
-      if (re2.test(stem)) {
-        w = stem;
-        debugFunction('1b', re2, w);
-
-        re2 = /(at|bl|iz)$/;
-        re3 = new RegExp("([^aeiouylsz])\\1$");
-        re4 = new RegExp("^" + C + v + "[^aeiouwxy]$");
-
-        if (re2.test(w)) { 
-          w = w + "e"; 
-          debugFunction('1b', re2, w);
-
-        } else if (re3.test(w)) { 
-          re = /.$/; 
-          w = w.replace(re,""); 
-          debugFunction('1b', re3, w);
-
-        } else if (re4.test(w)) { 
-          w = w + "e"; 
-          debugFunction('1b', re4, w);
-        }
-      }
-    }
-
-    // Step 1c
-    re = new RegExp("^(.*" + v + ".*)y$");
-    if (re.test(w)) {
-      var fp = re.exec(w);
-      stem = fp[1];
-      w = stem + "i";
-      debugFunction('1c', re, w);
-    }
-
-    // Step 2
-    re = /^(.+?)(ational|tional|enci|anci|izer|bli|alli|entli|eli|ousli|ization|ation|ator|alism|iveness|fulness|ousness|aliti|iviti|biliti|logi)$/;
-    if (re.test(w)) {
-      var fp = re.exec(w);
-      stem = fp[1];
-      suffix = fp[2];
-      re = new RegExp(mgr0);
-      if (re.test(stem)) {
-        w = stem + step2list[suffix];
-        debugFunction('2', re, w);
-      }
-    }
-
-    // Step 3
-    re = /^(.+?)(icate|ative|alize|iciti|ical|ful|ness)$/;
-    if (re.test(w)) {
-      var fp = re.exec(w);
-      stem = fp[1];
-      suffix = fp[2];
-      re = new RegExp(mgr0);
-      if (re.test(stem)) {
-        w = stem + step3list[suffix];
-        debugFunction('3', re, w);
-      }
-    }
-
-    // Step 4
-    re = /^(.+?)(al|ance|ence|er|ic|able|ible|ant|ement|ment|ent|ou|ism|ate|iti|ous|ive|ize)$/;
-    re2 = /^(.+?)(s|t)(ion)$/;
-    if (re.test(w)) {
-      var fp = re.exec(w);
-      stem = fp[1];
-      re = new RegExp(mgr1);
-      if (re.test(stem)) {
-        w = stem;
-        debugFunction('4', re, w);
-      }
-    } else if (re2.test(w)) {
-      var fp = re2.exec(w);
-      stem = fp[1] + fp[2];
-      re2 = new RegExp(mgr1);
-      if (re2.test(stem)) {
-        w = stem;
-        debugFunction('4', re2, w);
-      }
-    }
-
-    // Step 5
-    re = /^(.+?)e$/;
-    if (re.test(w)) {
-      var fp = re.exec(w);
-      stem = fp[1];
-      re = new RegExp(mgr1);
-      re2 = new RegExp(meq1);
-      re3 = new RegExp("^" + C + v + "[^aeiouwxy]$");
-      if (re.test(stem) || (re2.test(stem) && !(re3.test(stem)))) {
-        w = stem;
-        debugFunction('5', re, re2, re3, w);
-      }
-    }
-
-    re = /ll$/;
-    re2 = new RegExp(mgr1);
-    if (re.test(w) && re2.test(w)) {
-      re = /.$/;
-      w = w.replace(re,"");
-      debugFunction('5', re, re2, w);
-    }
-
-    // and turn initial Y back to y
-    if (firstch == "y") {
-      w = firstch.toLowerCase() + w.substr(1);
-    }
-
-
-    return w;
+  /* Detect initial `y`, make sure it never
+   * matches. */
+  if (value.charCodeAt(0) === CC_Y) {
+    firstCharacterWasLowerCaseY = true;
+    value = 'Y' + value.substr(1);
   }
-})();
+
+  /* Step 1a. */
+  if (SUFFIX_SSES_OR_IES.test(value)) {
+    /* Remove last two characters. */
+    value = value.substr(0, value.length - 2);
+  } else if (SUFFIX_S.test(value)) {
+    /* Remove last character. */
+    value = value.substr(0, value.length - 1);
+  }
+
+  /* Step 1b. */
+  if (match = SUFFIX_EED.exec(value)) {
+    if (MEASURE_GT_0.test(match[1])) {
+      /* Remove last character. */
+      value = value.substr(0, value.length - 1);
+    }
+  } else if (
+    (match = SUFFIX_ED_OR_ING.exec(value)) &&
+    VOWEL_IN_STEM.test(match[1])
+  ) {
+    value = match[1];
+
+    if (SUFFIX_AT_OR_BL_OR_IZ.test(value)) {
+      /* Append `e`. */
+      value += 'e';
+    } else if (
+      SUFFIX_MULTI_CONSONANT_LIKE.test(value)
+    ) {
+      /* Remove last character. */
+      value = value.substr(0, value.length - 1);
+    } else if (CONSONANT_LIKE.test(value)) {
+      /* Append `e`. */
+      value += 'e';
+    }
+  }
+
+  /* Step 1c. */
+  if ((match = SUFFIX_Y.exec(value)) && VOWEL_IN_STEM.test(match[1])) {
+    /* Remove suffixing `y` and append `i`. */
+    value = match[1] + 'i';
+  }
+
+  /* Step 2. */
+  if ((match = STEP_2.exec(value)) && MEASURE_GT_0.test(match[1])) {
+    value = match[1] + step2list[match[2]];
+  }
+
+  /* Step 3. */
+  if ((match = STEP_3.exec(value)) && MEASURE_GT_0.test(match[1])) {
+    value = match[1] + step3list[match[2]];
+  }
+
+  /* Step 4. */
+  if (match = STEP_4.exec(value)) {
+    if (MEASURE_GT_1.test(match[1])) {
+      value = match[1];
+    }
+  } else if ((match = SUFFIX_ION.exec(value)) && MEASURE_GT_1.test(match[1])) {
+    value = match[1];
+  }
+
+  /* Step 5. */
+  if (
+    (match = SUFFIX_E.exec(value)) &&
+    (
+      MEASURE_GT_1.test(match[1]) ||
+      (MEASURE_EQ_1.test(match[1]) && !CONSONANT_LIKE.test(match[1]))
+    )
+  ) {
+    value = match[1];
+  }
+
+  if (SUFFIX_LL.test(value) && MEASURE_GT_1.test(value)) {
+    value = value.substr(0, value.length - 1);
+  }
+
+  /* Turn initial `Y` back to `y`. */
+  if (firstCharacterWasLowerCaseY) {
+    value = 'y' + value.substr(1);
+  }
+
+  return value;
+}
