@@ -128,7 +128,7 @@ const addToWebSQL = async (database, data) => {
 }
 
 
-const testSQLSearch return (query) => {
+const testSQLSearch = (query) => {
 	const start = performance.now();
 	let xactOpen, queryDone, xactDone, results;
 	return new Promise((resolve, reject) => {
@@ -174,9 +174,8 @@ const testIndexedDBSearch = (query) => {
 							console.log('indexeddb took', (xactDone - start)) //, {index: cursorDone - start, docs: docsDone - cursorDone})
 							resolve(xactDone - start)
 					}
-      }
-    })
-  }
+    }
+  })
 }
 
 const fields = {
@@ -257,15 +256,12 @@ let database, idb;
 const go = async () => {
 	console.log('running')
   start = performance.now();
+
   database = await setupWebSQL();
   console.log('have websql')
   idb = await setupIndexedDB()
   console.log('have indexeddb')
 
-  window.testSQLSearch = testSQLSearchFactory(database);
-  window.testIndexedDB = testIndexedDBSearchFactory(idb);
-
-  console.log('ready')
   const data = await loadData()
   console.log('loading data', start - performance.now())
   start = performance.now()
@@ -280,16 +276,12 @@ const go = async () => {
   for (let i = 0; i < 1000; i++) {
     accum.push(await testSQLSearch("derfledermouse"));
   }
-  console.log("Websql: min=", Math.min.call(Math, accum), "max=", Math.max.call(Math, accum), "avg=", Math.avg.call(Math, accum))
+  console.log(accum)
   accum = []
   for (let i = 0; i < 1000; i++) {
-    await testIndexedDB("derfledermouse");
+    await testIndexedDBSearch("derfledermouse");
   }
-  console.log("indexeddb min=", Math.min.call(Math, accum), "max=", Math.max.call(Math, accum), "avg=", Math.avg.call(Math, accum))
-}
-
-Math.avg = function () {
-  return Array.from(arguments).reduce((s,x) => s + x) / arguments.length
+  console.log(accum)
 }
 
 go()
